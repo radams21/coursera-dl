@@ -8,15 +8,16 @@ import getpass
 import netrc
 import mechanize
 import cookielib
+import platform
+import shutil
+import sys
+import tarfile
+import math
 from bs4 import BeautifulSoup
 import tempfile
 from os import path
-import tarfile
-import platform
-import sys
 from util import *
 import _version
-import shutil
 
 class CourseraDownloader(object):
     """
@@ -28,7 +29,7 @@ class CourseraDownloader(object):
     :param username: username
     :param password: password
     :keyword proxy: http proxy, eg: foo.bar.com:1234
-    :keyword parser: xml parser 
+    :keyword parser: xml parser
     :keyword ignorefiles: comma separated list of file extensions to skip (e.g., "ppt,srt")
     """
     BASE_URL =    'https://class.coursera.org/%s'
@@ -50,7 +51,7 @@ class CourseraDownloader(object):
                         password,
                         proxy=None,
                         parser=DEFAULT_PARSER,
-                        ignorefiles=None, 
+                        ignorefiles=None,
                         max_path_part_len=None,
                         gzip_courses=False,
                         wk_filter=None):
@@ -68,7 +69,7 @@ class CourseraDownloader(object):
         self.proxy = proxy
         self.max_path_part_len = max_path_part_len
         self.gzip_courses = gzip_courses
-        
+
         try:
             self.wk_filter = map(int,wk_filter.split(",")) if wk_filter else None
         except Exception as e:
@@ -208,7 +209,7 @@ class CourseraDownloader(object):
                 # the name of this class
                 className = li.a.find(text=True).strip()
 
-                # Many class names have the following format: 
+                # Many class names have the following format:
                 #   "Something really cool (12:34)"
                 # If the class name has this format, replace the colon in the
                 # time with a hyphen.
@@ -238,7 +239,7 @@ class CourseraDownloader(object):
                         # Dont set a filename here, that will be inferred from the week
                         # titles
                         resourceLinks.append( (h,None) )
- 
+
                 # check if the video is included in the resources, if not, try
                 # do download it directly
                 hasvid = [x for x,_ in resourceLinks if x.find('.mp4') > 0]
@@ -297,24 +298,29 @@ class CourseraDownloader(object):
 
         # check if we should skip it (remember to remove the leading .)
         if ext and ext[1:] in self.ignorefiles:
-            print '    - skipping "%s" (extension ignored)' % fname 
+            print '    - skipping "%s" (extension ignored)' % fname
             return
 
         filepath = path.join(target_dir,fname)
 
         dl = True
         if path.exists(filepath):
-            if clen > 0: 
+            if clen > 0:
                 fs = path.getsize(filepath)
-                delta = clen - fs
+                delta = math.fabs(clen - fs)
 
-                # all we know is that the current filesize may be shorter than it should be and the content length may be incorrect
-                # overwrite the file if the reported content length is bigger than what we have already by at least k bytes (arbitrary)
+                # there are cases when a file was not completely downloaded or
+                # something went wront that meant the file on disk is
+                # unreadable. The file on disk my be smaller or larger (!) than
+                # the reported content length in those cases.
+                # Hence we overwrite the file if the reported content length is
+                # different than what we have already by at least k bytes (arbitrary)
 
                 # TODO this is still not foolproof as the fundamental problem is that the content length cannot be trusted
-                # so this really needs to be avoided and replaced by something else, eg., explicitly storing what downloaded correctly
-                if delta > 2:
-                    print '    - "%s" seems incomplete, downloading again' % fname
+                # so this really needs to be avoided and replaced by something
+                # else, eg., explicitly storing what downloaded correctly
+                if delta > 10:
+                   print '    - "%s" seems corrupt, downloading again' % fname
                 else:
                     print '    - "%s" already exists, skipping' % fname
                     dl = False
@@ -421,7 +427,7 @@ class CourseraDownloader(object):
 
                 # ensure the class dir exists
                 clsdir = path.join(wkdir,clsdirname)
-                if not path.exists(clsdir): 
+                if not path.exists(clsdir):
                     os.makedirs(clsdir)
 
                 print "  - Downloading resources for " + className
@@ -452,7 +458,7 @@ def get_netrc_creds():
     # inspired by https://github.com/jplehmann/coursera
 
     if platform.system() == 'Windows':
-        # where could the netrc file be hiding, try a number of places 
+        # where could the netrc file be hiding, try a number of places
         env_vars = ["HOME","HOMEDRIVE", "HOMEPATH","USERPROFILE","SYSTEMDRIVE"]
         env_dirs = [os.environ[e] for e in env_vars if os.environ.get(e,None)]
 
@@ -557,7 +563,7 @@ def main():
         else:
             # linux max path length is typically around 4060 so assume thats ok
             pass
- 
+
     # instantiate the downloader class
     d = CourseraDownloader(
                            username,
