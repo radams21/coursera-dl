@@ -166,7 +166,7 @@ class CourseraDownloader(object):
     def trim_path_part(self,s):
         mppl = self.max_path_part_len
         if mppl and len(s) > mppl:
-            return s[:mppl-3] + "..."
+            return s[:mppl]
         else:
             return s
 
@@ -294,14 +294,17 @@ class CourseraDownloader(object):
         fname = target_fname or filename_from_header(headers) or filename_from_url(url)
 
         # split off the extension
-        _,ext = path.splitext(fname)
+        basename, ext = path.splitext(fname)
+
+        # ensure it respects mppl
+        fname = self.trim_path_part(basename) + ext
 
         # check if we should skip it (remember to remove the leading .)
         if ext and ext[1:] in self.ignorefiles:
             print '    - skipping "%s" (extension ignored)' % fname
             return
 
-        filepath = path.join(target_dir,fname)
+        filepath = path.join(target_dir, fname)
 
         dl = True
         if path.exists(filepath):
@@ -426,7 +429,8 @@ class CourseraDownloader(object):
                 clsdirname = str(i).zfill(2) + " - " + className
 
                 # ensure the class dir exists
-                clsdir = path.join(wkdir,clsdirname)
+                clsdir = path.join(wkdir, clsdirname)
+
                 if not path.exists(clsdir):
                     os.makedirs(clsdir)
 
@@ -439,6 +443,7 @@ class CourseraDownloader(object):
                        self.download(classResource,target_dir=clsdir,target_fname=tfname)
                     except Exception as e:
                        print "    - failed: ",classResource,e
+
         if gzip_courses:
             tar_file_name = cname + ".tar.gz"
             print "Compressing and storing as " + tar_file_name
