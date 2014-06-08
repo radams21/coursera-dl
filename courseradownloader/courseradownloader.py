@@ -535,7 +535,8 @@ def main():
                         dest='gzip_courses',action="store_true",default=False,help='Tarball courses for archival storage (folders get deleted)')
     parser.add_argument("-mppl", dest='mppl', type=int, default=100,
                         help='Maximum length of filenames/dirs in a path (windows only)')
-    parser.add_argument("-w", dest='wkfilter', type=str, default=None, help="Comma separted list of week numbers to download e.g., 1,3,8")
+    parser.add_argument("-w", dest='wkfilter', type=str, default=None,
+                        help="Comma separted list of sequence/lesson/week numbers to download e.g., 1,3,8")
     args = parser.parse_args()
 
     # check the parser
