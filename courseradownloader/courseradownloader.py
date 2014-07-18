@@ -116,15 +116,16 @@ class CourseraDownloader(object):
                                     urllib2.HTTPSHandler())
 
         opener.addheaders.append(('Cookie', 'csrftoken=%s' % csrftoken))
-        opener.addheaders.append(('Referer', 'https://accounts.coursera.org/signin'))
+        opener.addheaders.append(('Referer', 'https://www.coursera.org'))
         opener.addheaders.append(('X-CSRFToken', csrftoken))
         req = urllib2.Request(self.LOGIN_URL)
 
-        data = urllib.urlencode({'email': self.username,'password': self.password})
+        data = urllib.urlencode({'email': self.username,'password': self.password,'webrequest': 'true'})
         req.add_data(data)
 
         try:
             opener.open(req)
+            # timeout=self.TIMEOUT should be handled
         except urllib2.HTTPError as e:
             if e.code == 401:
                 raise Exception("Invalid username or password")
