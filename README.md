@@ -17,8 +17,10 @@ Make sure you have installed [Python][] 2.7 and [pip][].
 
 Then simply run: pip install coursera-dl
 
-This will create a coursera-dl script in /usr/local/bin (linux) or
-c:\\Python2.7\\Scripts (windows)
+This will create a coursera-dl script in /usr/local/bin (linux), 
+c:\\Python2.7\\Scripts (windows), or /opt/local/Library/Frameworks/Python.framework/Versions/2.7/bin (OSX).
+
+Note exact paths may vary depending on your system.
 
 (to upgrade use pip install --upgrade)
 
