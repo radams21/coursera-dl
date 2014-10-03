@@ -162,6 +162,11 @@ class CourseraDownloader(object):
         """Given the name of a course, return the video lecture url"""
         return self.LECTURE_URL % course_name
 
+    def quiz_url_from_name(self,course_name):
+        """Given the name of a course, return the quiz  url"""
+        return self.QUIZ_URL % course_name
+
+
     #TODO: simple hack, something more elaborate needed
     def trim_path_part(self,s):
         mppl = self.max_path_part_len
@@ -170,7 +175,7 @@ class CourseraDownloader(object):
         else:
             return s
 
-    def get_downloadable_content(self,course_url):
+    def get_downloadable_content(self,course_url,findlectures=0):
         """
         Given the video lecture URL of the course, return a list of all
         downloadable resources.
@@ -207,7 +212,10 @@ class CourseraDownloader(object):
             classNames = []
             for li in lis:
                 # the name of this class
-                className = li.a.find(text=True).strip()
+		if findlectures:
+                	className = li.a.find(text=True).strip()
+		else:
+			className = "Quizzes"
 
                 # Many class names have the following format:
                 #   "Something really cool (12:34)"
@@ -220,14 +228,27 @@ class CourseraDownloader(object):
                 className = sanitise_filename(className)
                 className = self.trim_path_part(className)
 
+
                 # collect all the resources for this class (ppt, pdf, mov, ..)
-                classResources = li.find('div', {'class':'course-lecture-item-resource'})
+		if findlectures:
+                	classResources = li.find('div', {'class':'course-lecture-item-resource'})
+		else:
+			classResources = li.find('div', {'style':'display:none'})
+
                 hrefs = classResources.findAll('a')
                 resourceLinks = []
 
                 for a in hrefs:
                     # get the hyperlink itself
                     h = clean_url(a.get('href'))
+
+		    cur_title = None
+
+		    if not findlectures:
+		    	titles = classResources.findAll('td') 
+		    	cur_title = titles[1]
+		    	cur_title = ' '.join(map(lambda s: re.sub('<td','',s),cur_title))+".html"
+	
                     if not h: continue
 
                     # Sometimes the raw, uncompresed source videos are available as
@@ -238,12 +259,12 @@ class CourseraDownloader(object):
                     else:
                         # Dont set a filename here, that will be inferred from the week
                         # titles
-                        resourceLinks.append( (h,None) )
+                        resourceLinks.append( (h,cur_title) )
 
                 # check if the video is included in the resources, if not, try
                 # do download it directly
                 hasvid = [x for x,_ in resourceLinks if x.find('.mp4') > 0]
-                if not hasvid:
+                if findlectures and not hasvid:
                     ll = li.find('a',{'class':'lecture-link'})
                     lurl = clean_url(ll['data-modal-iframe'])
 
@@ -364,6 +385,102 @@ class CourseraDownloader(object):
             json_data = json.dumps(data, indent=4, separators=(',', ':'))
             f.write(json_data)
 
+    def download_course_q(self,cname,dest_dir=".",reverse_sections=False,gzip_courses=False):
+        """
+        Download all the contents (quizzes, videos, lecture notes, ...)
+        of the course to the given destination directory (defaults to .)
+        """
+        # open the main class page
+        self.browser.open(self.AUTH_URL % cname,timeout=self.TIMEOUT)
+
+        # get the lecture url
+        course_url = self.lecture_url_from_name(cname)
+
+	quiz_url = self.quiz_url_from_name(cname)
+	print "quiz url is ",quiz_url
+
+	findlectures = 0
+        weeklyTopics = self.get_downloadable_content(quiz_url, findlectures)
+
+        if not weeklyTopics:
+            print " Warning: no downloadable content found for %s, did you accept the honour code?" % cname
+            return
+        else:
+            print '* Got all downloadable content for ' + cname
+
+        if reverse_sections:
+            weeklyTopics.reverse()
+            print "* Weekly modules reversed"
+
+        # where the course will be downloaded to
+        course_dir = path.abspath(path.join(dest_dir,cname))
+
+        # ensure the course dir exists
+        if not path.exists(course_dir):
+            os.makedirs(course_dir)
+
+        print "* " + cname + " will be downloaded to " + course_dir
+
+        # download the standard pages
+        print " - Downloading lecture/syllabus pages"
+        self.download(self.HOME_URL % cname,target_dir=course_dir,target_fname="index.html")
+        self.download(course_url,           target_dir=course_dir,target_fname="lectures.html")
+        self.download(quiz_url,           target_dir=course_dir,target_fname="quizzes.html")
+        try:
+            self.download_about(cname,course_dir)
+        except Exception as e:
+            print "Warning: failed to download about file",e
+
+        # now download the actual content (video's, lecture notes, ...)
+        for j, (weeklyTopic, weekClasses) in enumerate(weeklyTopics,start=1):
+
+            if self.wk_filter and j not in self.wk_filter:
+                print " - skipping %s (idx = %s), as it is not in the week filter" % (weeklyTopic,j)
+                continue
+
+            # add a numeric prefix to the week directory name to ensure chronological ordering
+            wkdirname = str(j).zfill(2) + " - " + weeklyTopic
+
+            # ensure the week dir exists
+            wkdir = path.join(course_dir,wkdirname)
+            if not path.exists(wkdir):
+                os.makedirs(wkdir)
+
+            print " - " + weeklyTopic
+
+            for i, (className, classResources) in enumerate(weekClasses,start=1):
+
+                # ensure chronological ordering
+                clsdirname = str(i).zfill(2) + " - " + className
+
+                # ensure the class dir exists
+		if findlectures:
+                	clsdir = path.join(wkdir, clsdirname)
+		else:
+			clsdir = path.join(course_dir, clsdirname)
+
+                if not path.exists(clsdir):
+                    os.makedirs(clsdir)
+
+                print "  - Downloading resources for " + className
+
+                # download each resource
+                for classResource,tfname in classResources:
+                    try:
+                       #print '  - Downloading ', classResource
+                       self.download(classResource,target_dir=clsdir,target_fname=tfname)
+                    except Exception as e:
+                       print "    - failed: ",classResource,e
+
+        if gzip_courses:
+            tar_file_name = cname + ".tar.gz"
+            print "Compressing and storing as " + tar_file_name
+            tar = tarfile.open(os.path.join(dest_dir, tar_file_name),'w:gz')
+            tar.add(os.path.join(dest_dir, cname),arcname=cname)
+            tar.close()
+            print "Compression complete. Cleaning up."
+
+
     def download_course(self,cname,dest_dir=".",reverse_sections=False,gzip_courses=False):
         """
         Download all the contents (quizzes, videos, lecture notes, ...)
@@ -375,7 +492,8 @@ class CourseraDownloader(object):
         # get the lecture url
         course_url = self.lecture_url_from_name(cname)
 
-        weeklyTopics = self.get_downloadable_content(course_url)
+	findlectures = 1
+        weeklyTopics = self.get_downloadable_content(course_url, findlectures)
 
         if not weeklyTopics:
             print " Warning: no downloadable content found for %s, did you accept the honour code?" % cname
@@ -591,6 +709,7 @@ def main():
     for i,cn in enumerate(args.course_names,start=1):
         print
         print "Course %s of %s" % (i,len(args.course_names))
+        d.download_course_q(cn,dest_dir=args.dest_dir,reverse_sections=args.reverse,gzip_courses = args.gzip_courses)
         d.download_course(cn,dest_dir=args.dest_dir,reverse_sections=args.reverse,gzip_courses = args.gzip_courses)
 
 if __name__ == '__main__':
